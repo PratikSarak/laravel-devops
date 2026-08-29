@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
         VM_HOST = "192.168.7.160"
         VM_USER = "test"
@@ -19,11 +23,13 @@ pipeline {
         stage('Package') {
             steps {
                 sh '''
-                    tar czf app.tar.gz \
-                    --exclude=".git" \
-                    --exclude="app.tar.gz" \
-                    --exclude=".env" \
-                    .
+                    rm -f /tmp/laravel-app.tar.gz
+
+                    tar czf /tmp/laravel-app.tar.gz \
+                        --exclude=".git" \
+                        --exclude=".env" \
+                        --exclude="storage/logs/*" \
+                        .
                 '''
             }
         }
@@ -45,15 +51,15 @@ pipeline {
 
                         sshpass -p "$SSH_PASS" scp \
                             -o StrictHostKeyChecking=no \
-                            app.tar.gz \
+                            /tmp/laravel-app.tar.gz \
                             "$SSH_USER@$VM_HOST:$DEPLOY_DIR/"
 
                         sshpass -p "$SSH_PASS" ssh \
                             -o StrictHostKeyChecking=no \
                             "$SSH_USER@$VM_HOST" \
                             "cd $DEPLOY_DIR && \
-                             tar xzf app.tar.gz && \
-                             docker compose down && \
+                             tar xzf laravel-app.tar.gz && \
+                             docker compose down || true && \
                              docker compose up -d --build"
                     '''
                 }
