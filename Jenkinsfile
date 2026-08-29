@@ -28,7 +28,11 @@ pipeline {
                     tar czf /tmp/laravel-app.tar.gz \
                         --exclude=".git" \
                         --exclude=".env" \
+                        --exclude="node_modules" \
+                        --exclude="public/build" \
                         --exclude="storage/logs/*" \
+                        --exclude="storage/framework/views/*" \
+                        --exclude="vendor" \
                         .
                 '''
             }
@@ -59,14 +63,16 @@ pipeline {
                             "$SSH_USER@$VM_HOST" \
                             "cd $DEPLOY_DIR && \
                              tar xzf laravel-app.tar.gz && \
+                             rm -f laravel-app.tar.gz && \
                              docker compose down || true && \
-                             docker compose up -d --build"
+                             docker compose build --no-cache app && \
+                             docker compose up -d"
                     '''
                 }
             }
         }
 
-        stage('Post Deploy') {
+        stage('Prepare Laravel') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -80,7 +86,29 @@ pipeline {
                             -o StrictHostKeyChecking=no \
                             "$SSH_USER@$VM_HOST" \
                             "cd $DEPLOY_DIR && \
+                             docker compose exec -T app php artisan optimize:clear && \
                              docker compose exec -T app php artisan migrate --force"
+                    '''
+                }
+            }
+        }
+
+        stage('Fix Permissions') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'target-vm-ssh',
+                        usernameVariable: 'SSH_USER',
+                        passwordVariable: 'SSH_PASS'
+                    )
+                ]) {
+                    sh '''
+                        sshpass -p "$SSH_PASS" ssh \
+                            -o StrictHostKeyChecking=no \
+                            "$SSH_USER@$VM_HOST" \
+                            "cd $DEPLOY_DIR && \
+                             sudo chown -R www-data:www-data storage bootstrap/cache && \
+                             sudo chmod -R 775 storage bootstrap/cache"
                     '''
                 }
             }
@@ -99,10 +127,22 @@ pipeline {
                         sshpass -p "$SSH_PASS" ssh \
                             -o StrictHostKeyChecking=no \
                             "$SSH_USER@$VM_HOST" \
-                            "cd $DEPLOY_DIR && docker compose ps"
+                            "cd $DEPLOY_DIR && \
+                             docker compose ps && \
+                             curl -f http://localhost"
                     '''
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'Laravel deployment completed successfully!'
+        }
+
+        failure {
+            echo 'Laravel deployment failed. Check the failed stage logs.'
         }
     }
 }
