@@ -107,8 +107,8 @@ pipeline {
                             -o StrictHostKeyChecking=no \
                             "$SSH_USER@$VM_HOST" \
                             "cd $DEPLOY_DIR && \
-                             sudo chown -R www-data:www-data storage bootstrap/cache && \
-                             sudo chmod -R 775 storage bootstrap/cache"
+                             docker compose exec -T -u root app chown -R www-data:www-data storage bootstrap/cache && \
+                             docker compose exec -T -u root app chmod -R 775 storage bootstrap/cache"
                     '''
                 }
             }
